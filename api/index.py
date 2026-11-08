@@ -44,62 +44,68 @@ def match(profile):
 
 
 def with_ai(profile, fallback):
-    try:
-        system = (
-            "Return a single valid JSON object with summary and exactly 3 recommendations. "
-            "Each recommendation must have id,title,family,match (integer 1-99),roles (2-4 strings),reason,steps "
-            "(exactly 5 objects with title,detail,tag). Only use candidate paths supplied. "
-            "Do not invent careers or guarantee employment. Match scores are directional estimates, not probabilities."
-        )
-        payload = {
-            "model": "auto",
-            "temperature": 0.25,
-            "max_tokens": 2600,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": json.dumps({"profile": profile, "candidate_paths": fallback["recommendations"]})},
-            ],
-        }
-        upstream = urllib.request.Request(
-            "https://vireonix.ai/v1/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(upstream, timeout=35) as response:
-            result = json.loads(response.read().decode("utf-8"))
-        raw = result.get("choices", [{}])[0].get("message", {}).get("content")
-        if not isinstance(raw, str) or not raw.strip():
-            raise ValueError("Empty AI response")
-        data = json.loads(raw.strip().removeprefix("```json").removesuffix("```").strip())
-        candidates = {item["id"]: item for item in fallback["recommendations"]}
-        recommendations = data.get("recommendations")
-        if not isinstance(data.get("summary"), str) or not isinstance(recommendations, list) or len(recommendations) != 3:
-            raise ValueError("Invalid recommendation structure")
-        cleaned = []
-        for item in recommendations:
-            if not isinstance(item, dict) or item.get("id") not in candidates:
-                raise ValueError("Unknown career path")
-            candidate = candidates[item["id"]]
-            if isinstance(item.get("match"), bool) or not isinstance(item.get("match"), int) or not 1 <= item["match"] <= 99:
-                raise ValueError("Invalid match score")
-            roles = item.get("roles")
-            steps = item.get("steps")
-            if not isinstance(roles, list) or not 2 <= len(roles) <= 4 or not all(isinstance(x, str) for x in roles):
-                raise ValueError("Invalid role list")
-            if not isinstance(steps, list) or len(steps) != 5 or not all(isinstance(x, dict) and isinstance(x.get("title"), str) and isinstance(x.get("detail"), str) for x in steps):
-                raise ValueError("Invalid roadmap")
-            cleaned.append({
-                "id": candidate["id"], "title": candidate["title"], "family": candidate["family"],
-                "match": item["match"], "roles": [x[:100] for x in roles],
-                "reason": str(item.get("reason", candidate["reason"]))[:500],
-                "steps": [{"title": x["title"][:120], "detail": x["detail"][:500], "tag": str(x.get("tag", "milestone"))[:40]} for x in steps],
-            })
-        return {"summary": data["summary"][:1000], "recommendations": cleaned, "source": "vireonix"}
-    except Exception as exc:
-        app.logger.warning("Vireonix career personalization failed (%s); using deterministic recommendations.", type(exc).__name__)
-        return fallback
+    last_error = None
+    for model in ("nvidia/nemotron-3.5-bolt", "poolside/laguna-xs-2.1"):
+        try:
+            system = (
+                "Return a single valid JSON object with summary and exactly 3 recommendations. "
+                "Each recommendation must have id,title,family,match (integer 1-99),roles (2-4 strings),reason,steps "
+                "(exactly 5 objects with title,detail,tag). Only use candidate paths supplied. "
+                "Do not invent careers or guarantee employment. Match scores are directional estimates, not probabilities. "
+                "Return only JSON; do not include hidden reasoning or markdown fences."
+            )
+            payload = {
+                "model": model,
+                "temperature": 0.25,
+                "max_tokens": 2600,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": json.dumps({"profile": profile, "candidate_paths": fallback["recommendations"]})},
+                ],
+            }
+            upstream = urllib.request.Request(
+                "https://blockrun.ai/api/v1/chat/completions",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(upstream, timeout=25) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            raw = result.get("choices", [{}])[0].get("message", {}).get("content")
+            if not isinstance(raw, str) or not raw.strip():
+                raise ValueError("Empty AI response")
+            cleaned = raw.strip().replace(chr(96) * 3 + "json", "").replace(chr(96) * 3, "").strip()
+            data = json.loads(cleaned)
+            candidates = {item["id"]: item for item in fallback["recommendations"]}
+            recommendations = data.get("recommendations")
+            if not isinstance(data.get("summary"), str) or not isinstance(recommendations, list) or len(recommendations) != 3:
+                raise ValueError("Invalid recommendation structure")
+            cleaned_items = []
+            for item in recommendations:
+                if not isinstance(item, dict) or item.get("id") not in candidates:
+                    raise ValueError("Unknown career path")
+                candidate = candidates[item["id"]]
+                if isinstance(item.get("match"), bool) or not isinstance(item.get("match"), int) or not 1 <= item["match"] <= 99:
+                    raise ValueError("Invalid match score")
+                roles = item.get("roles")
+                steps = item.get("steps")
+                if not isinstance(roles, list) or not 2 <= len(roles) <= 4 or not all(isinstance(x, str) for x in roles):
+                    raise ValueError("Invalid role list")
+                if not isinstance(steps, list) or len(steps) != 5 or not all(isinstance(x, dict) and isinstance(x.get("title"), str) and isinstance(x.get("detail"), str) for x in steps):
+                    raise ValueError("Invalid roadmap")
+                cleaned_items.append({
+                    "id": candidate["id"], "title": candidate["title"], "family": candidate["family"],
+                    "match": item["match"], "roles": [x[:100] for x in roles],
+                    "reason": str(item.get("reason", candidate["reason"]))[:500],
+                    "steps": [{"title": x["title"][:120], "detail": x["detail"][:500], "tag": str(x.get("tag", "milestone"))[:40]} for x in steps],
+                })
+            return {"summary": data["summary"][:1000], "recommendations": cleaned_items, "source": "blockrun"}
+        except Exception as exc:
+            last_error = exc
+            app.logger.warning("Pathfinder BlockRun model %s failed (%s).", model, type(exc).__name__)
+    app.logger.warning("Pathfinder BlockRun inference unavailable; using deterministic recommendations.")
+    return fallback
 
 def parse_text_list(value, field):
     if not isinstance(value, list):
@@ -124,7 +130,7 @@ def home():
 
 @app.get("/api/health")
 def health():
-    return jsonify({"status": "ok", "service": "career-path-recommender", "ai_configured": True, "ai_provider": "vireonix"})
+    return jsonify({"status": "ok", "service": "career-path-recommender", "ai_configured": True, "ai_provider": "blockrun"})
 
 
 @app.post("/api/recommend")

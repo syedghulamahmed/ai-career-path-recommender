@@ -43,7 +43,7 @@ def match(profile):
 
 
 def with_ai(profile, fallback):
-    key = os.getenv("AI_GATEWAY_API_KEY") or request.headers.get("x-vercel-oidc-token")
+    key = os.getenv("AI_GATEWAY_API_KEY") or os.getenv("VERCEL_OIDC_TOKEN")
     if not key:
         return fallback
     try:
@@ -111,7 +111,7 @@ def home():
 
 @app.get("/api/health")
 def health():
-    return jsonify({"status": "ok", "service": "career-path-recommender", "ai_configured": bool(os.getenv("AI_GATEWAY_API_KEY") or request.headers.get("x-vercel-oidc-token"))})
+    return jsonify({"status": "ok", "service": "career-path-recommender", "ai_configured": bool(os.getenv("AI_GATEWAY_API_KEY") or os.getenv("VERCEL_OIDC_TOKEN"))})
 
 
 @app.post("/api/recommend")

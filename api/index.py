@@ -43,14 +43,14 @@ def match(profile):
 
 
 def with_ai(profile, fallback):
-    key = os.getenv("OPENAI_API_KEY")
+    key = os.getenv("AI_GATEWAY_API_KEY") or os.getenv("VERCEL_OIDC_TOKEN")
     if not key:
         return fallback
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=key, timeout=12.0, max_retries=0)
+        client = OpenAI(api_key=key, base_url="https://ai-gateway.vercel.sh/v1", timeout=20.0, max_retries=0)
         response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+            model=os.getenv("AI_GATEWAY_MODEL", "openai/gpt-4.1-mini"),
             temperature=0.3,
             response_format={"type": "json_object"},
             messages=[
@@ -82,7 +82,7 @@ def with_ai(profile, fallback):
                 "reason": str(item.get("reason", candidate["reason"]))[:500],
                 "steps": [{"title": x["title"][:120], "detail": x["detail"][:500], "tag": str(x.get("tag", "milestone"))[:40]} for x in steps],
             })
-        return {"summary": data["summary"][:1000], "recommendations": cleaned, "source": "openai"}
+        return {"summary": data["summary"][:1000], "recommendations": cleaned, "source": "vercel-ai-gateway"}
     except Exception:
         app.logger.exception("Career personalization failed; using deterministic recommendations")
         return fallback
@@ -111,7 +111,7 @@ def home():
 
 @app.get("/api/health")
 def health():
-    return jsonify({"status": "ok", "service": "career-path-recommender", "ai_configured": bool(os.getenv("OPENAI_API_KEY"))})
+    return jsonify({"status": "ok", "service": "career-path-recommender", "ai_configured": bool(os.getenv("AI_GATEWAY_API_KEY") or os.getenv("VERCEL_OIDC_TOKEN"))})
 
 
 @app.post("/api/recommend")

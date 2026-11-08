@@ -40,7 +40,7 @@ def with_ai(profile,fallback):
 @app.get("/")
 def home(): return send_from_directory(os.path.dirname(__file__),"index.html")
 @app.get("/api/health")
-def health(): return jsonify({"status":"ok","service":"career-path-recommender"})
+def health(): return jsonify({"status":"ok","service":"career-path-recommender","ai_configured":bool(os.getenv("OPENAI_API_KEY"))})
 @app.post("/api/recommend")
 def recommend():
  data=request.get_json(silent=True) or {}

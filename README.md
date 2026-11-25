@@ -25,10 +25,10 @@ python -m venv .venv
 # Windows: .venv\\Scripts\\activate
 # macOS/Linux:
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 python -m flask --app api.index run --debug
 ```
-Open http://127.0.0.1:5000.
+Open http://127.0.0.1:5000.\n\nRun the API tests with `pytest -q`.
 
 No provider API key is required.
 

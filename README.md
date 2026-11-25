@@ -1,5 +1,9 @@
 # Pathfinder AI — AI Career Path Recommender
 
+## Live demo
+
+[Open the deployed application](https://ai-career-path-recommender-9bn2.vercel.app)
+
 A career-direction tool for interns. Enter skills, interests, experience level, career goal, and weekly learning time to receive three career matches, relevant roles, and practical roadmaps.
 
 ## Features
